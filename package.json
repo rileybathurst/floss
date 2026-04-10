@@ -1,0 +1,27 @@
+{
+  "name": "develper",
+  "version": "1.0.0",
+  "description": "Simple Astro-style TypeScript CLI chooser",
+  "main": "dist/index.js",
+  "bin": {
+    "astro-chooser": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build --silent && node dist/index.js",
+    "list": "npm run build --silent && node dist/list-parent-folders.js",
+    "versions": "npm run build --silent && node dist/check-parent-package-versions.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@clack/prompts": "^1.2.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2"
+  }
+}
