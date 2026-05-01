@@ -144,7 +144,12 @@ async function runStrapiExportWithVersionHandling(
 				if (requiredNodeVersion) {
 					console.log(`   Switching to Node.js ${requiredNodeVersion}...`);
 					try {
-						await runCommand("nvm", ["use", requiredNodeVersion], projectPath);
+						// Use bash to source nvm and switch versions since nvm is a shell function
+						await runCommand(
+							"bash",
+							["-c", `source ~/.nvm/nvm.sh && nvm use ${requiredNodeVersion}`],
+							projectPath,
+						);
 						console.log(
 							`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
 						);
@@ -152,6 +157,31 @@ async function runStrapiExportWithVersionHandling(
 						continue; // Retry the export
 					} catch (nvmError) {
 						console.error(`   ❌ Failed to switch Node version:`, nvmError);
+						// Try alternative nvm paths
+						try {
+							console.log(`   Trying alternative nvm installation path...`);
+							await runCommand(
+								"bash",
+								[
+									"-c",
+									`source /usr/local/opt/nvm/nvm.sh && nvm use ${requiredNodeVersion}`,
+								],
+								projectPath,
+							);
+							console.log(
+								`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
+							);
+							console.log(`   🔄 Retrying export...`);
+							continue; // Retry the export
+						} catch (alternativeError) {
+							console.error(
+								`   ❌ Alternative nvm path also failed:`,
+								alternativeError,
+							);
+							console.log(
+								`   💡 Manual fix required: run 'nvm use ${requiredNodeVersion}' in your shell and retry`,
+							);
+						}
 					}
 				} else {
 					console.log(
