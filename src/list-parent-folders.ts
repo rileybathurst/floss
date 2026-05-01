@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 
-import { readdir, writeFile, mkdir, readFile } from "node:fs/promises";
+import { readdir, writeFile, mkdir, readFile, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getCsvPath, getDiscoveredAtString } from "./utils.js";
+
+async function isGitRepo(folderPath: string): Promise<boolean> {
+	try {
+		const gitPath = path.join(folderPath, ".git");
+		await access(gitPath);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 async function detectProjectType(folderPath: string): Promise<string> {
 	try {
@@ -39,16 +50,20 @@ async function main(): Promise<void> {
 		.map((entry) => entry.name)
 		.sort((a, b) => a.localeCompare(b));
 
-	const csvPath = path.join(projectDir, "/output/parent-projects.csv");
-	const now = new Date();
-	const discoveredAt = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
+	const csvPath = getCsvPath("parent-projects");
+	const discoveredAt = getDiscoveredAtString();
 
-	// Detect project types for all folders
+	// Detect project types and git status for all folders
 	const foldersWithTypes = await Promise.all(
 		folderNames.map(async (folderName) => {
 			const folderPath = path.join(parentDir, folderName);
 			const projectType = await detectProjectType(folderPath);
-			return { name: folderName, type: projectType };
+			const isGitRepository = await isGitRepo(folderPath);
+			return {
+				name: folderName,
+				type: projectType,
+				isGit: isGitRepository ? "yes" : "no",
+			};
 		}),
 	);
 
@@ -57,11 +72,12 @@ async function main(): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
 
 	// Create CSV content with headers
-	const csvHeaders = "name,parent_dir,discovered_at,project_type\n";
+	const csvHeaders =
+		"name,parent_dir,discovered_at,project_type,is_git_repo,export_status,export_file\n";
 	const csvRows = foldersWithTypes
 		.map(
 			(folder) =>
-				`"${folder.name}","${parentDir}","${discoveredAt}","${folder.type}"`,
+				`"${folder.name}","${parentDir}","${discoveredAt}","${folder.type}","${folder.isGit}","",""`,
 		)
 		.join("\n");
 	const csvContent = csvHeaders + csvRows;
@@ -69,7 +85,7 @@ async function main(): Promise<void> {
 	await writeFile(csvPath, csvContent, "utf8");
 
 	const output = foldersWithTypes
-		.map((folder) => `- ${folder.name} (${folder.type})`)
+		.map((folder) => `- ${folder.name} (${folder.type}) [Git: ${folder.isGit}]`)
 		.join("\n");
 
 	console.log(`Parent directory: ${parentDir}`);

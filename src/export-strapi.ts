@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { getMostRecentCsvPath } from "./utils.js";
 
 async function runCommand(
 	command: string,
@@ -50,6 +51,7 @@ async function parseCsv(csvContent: string): Promise<
 		parentDir: string;
 		discoveredAt: string;
 		projectType: string;
+		isGit: string;
 	}>
 > {
 	const lines = csvContent.trim().split("\n");
@@ -87,14 +89,13 @@ async function parseCsv(csvContent: string): Promise<
 			parentDir: cleanFields[1] || "",
 			discoveredAt: cleanFields[2] || "",
 			projectType: cleanFields[3] || "",
+			isGit: cleanFields[4] || "",
 		};
 	});
 }
 
 async function main(): Promise<void> {
-	const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-	const projectDir = path.resolve(scriptDir, "..");
-	const csvPath = path.join(projectDir, "output/parent-projects.csv");
+	const csvPath = await getMostRecentCsvPath("parent-projects");
 	console.log(`Reading CSV file from: ${csvPath}`);
 
 	try {
@@ -123,6 +124,7 @@ async function main(): Promise<void> {
 			parentDir: string;
 			discoveredAt: string;
 			projectType: string;
+			isGit: string;
 			exportStatus: string;
 			exportFile: string;
 		}> = [];
@@ -189,11 +191,11 @@ async function main(): Promise<void> {
 
 		// Write updated CSV
 		const csvHeaders =
-			"name,parent_dir,discovered_at,project_type,export_status,export_file\n";
+			"name,parent_dir,discovered_at,project_type,is_git_repo,export_status,export_file\n";
 		const csvRows = updatedProjects
 			.map(
 				(proj) =>
-					`"${proj.name}","${proj.parentDir}","${proj.discoveredAt}","${proj.projectType}","${proj.exportStatus}","${proj.exportFile}"`,
+					`"${proj.name}","${proj.parentDir}","${proj.discoveredAt}","${proj.projectType}","${proj.isGit}","${proj.exportStatus}","${proj.exportFile}"`,
 			)
 			.join("\n");
 		const csvContent = csvHeaders + csvRows;
