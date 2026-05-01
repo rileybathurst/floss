@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "npm run build --silent && node dist/index.js",
     "list": "npm run build --silent && node dist/list-parent-folders.js",
-    "versions": "npm run build --silent && node dist/check-parent-package-versions.js"
+    "versions": "npm run build --silent && node dist/check-parent-package-versions.js",
+    "export": "npm run build --silent && node dist/export-strapi.js"
   },
   "keywords": [],
   "author": "",
