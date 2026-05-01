@@ -6,6 +6,68 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { getMostRecentCsvPath } from "./utils.js";
 
+// Mapping of NODE_MODULE_VERSION to Node.js version
+interface NodeVersionMapping {
+	version: string;
+	moduleVersion: string;
+}
+
+let nodeVersionMappings: NodeVersionMapping[] = [];
+
+async function loadNodeVersionMappings(): Promise<void> {
+	const __filename = fileURLToPath(import.meta.url);
+	const __dirname = path.dirname(__filename);
+	// Go up one level from dist/ to project root, then into src/
+	const nvmCsvPath = path.join(__dirname, "..", "src", "nvm.csv");
+
+	try {
+		const csvContent = await readFile(nvmCsvPath, "utf8");
+		const lines = csvContent.trim().split("\n");
+		// Skip header line
+		const dataLines = lines.slice(1);
+
+		nodeVersionMappings = dataLines.map((line) => {
+			const [version, moduleVersion] = line.split(",");
+			return {
+				version: version.trim(),
+				moduleVersion: moduleVersion.trim(),
+			};
+		});
+
+		console.log("📋 Loaded Node.js version mappings:");
+		nodeVersionMappings.forEach((mapping) => {
+			console.log(
+				`   ${mapping.version} → NODE_MODULE_VERSION ${mapping.moduleVersion}`,
+			);
+		});
+	} catch (error) {
+		console.warn("⚠️  Could not load Node version mappings from nvm.csv");
+		nodeVersionMappings = [];
+	}
+}
+
+function extractNodeModuleVersionError(
+	errorOutput: string,
+): { current: string; required: string } | null {
+	const match = errorOutput.match(
+		/NODE_MODULE_VERSION (\d+).*requires\s+NODE_MODULE_VERSION (\d+)/i,
+	);
+	if (match) {
+		return {
+			current: match[1],
+			required: match[2],
+		};
+	}
+	return null;
+}
+
+function getNodeVersionForModuleVersion(moduleVersion: string): string | null {
+	const mapping = nodeVersionMappings.find(
+		(m) => m.moduleVersion === moduleVersion,
+	);
+	return mapping ? mapping.version : null;
+}
+
 async function runCommand(
 	command: string,
 	args: string[],
@@ -35,7 +97,9 @@ async function runCommand(
 			if (code === 0) {
 				resolve(output);
 			} else {
-				reject(new Error(`Command failed with exit code ${code}`));
+				reject(
+					new Error(`Command failed with exit code ${code}\nOutput: ${output}`),
+				);
 			}
 		});
 
@@ -43,6 +107,68 @@ async function runCommand(
 			reject(error);
 		});
 	});
+}
+
+async function runStrapiExportWithVersionHandling(
+	projectPath: string,
+	maxRetries: number = 2,
+): Promise<string> {
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			console.log(`   Attempt ${attempt}/${maxRetries}...`);
+			const output = await runCommand(
+				"npm",
+				["run", "strapi", "export", "--", "--no-encrypt", "--no-compress"],
+				projectPath,
+			);
+			return output;
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			console.error(`   ❌ Export attempt ${attempt} failed:`, errorMessage);
+
+			// Check for NODE_MODULE_VERSION mismatch
+			const versionError = extractNodeModuleVersionError(errorMessage);
+			if (
+				versionError &&
+				nodeVersionMappings.length > 0 &&
+				attempt < maxRetries
+			) {
+				console.log(`\n🔧 Detected NODE_MODULE_VERSION mismatch:`);
+				console.log(`   Current: ${versionError.current}`);
+				console.log(`   Required: ${versionError.required}`);
+
+				const requiredNodeVersion = getNodeVersionForModuleVersion(
+					versionError.required,
+				);
+				if (requiredNodeVersion) {
+					console.log(`   Switching to Node.js ${requiredNodeVersion}...`);
+					try {
+						await runCommand("nvm", ["use", requiredNodeVersion], projectPath);
+						console.log(
+							`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
+						);
+						console.log(`   🔄 Retrying export...`);
+						continue; // Retry the export
+					} catch (nvmError) {
+						console.error(`   ❌ Failed to switch Node version:`, nvmError);
+					}
+				} else {
+					console.log(
+						`   ⚠️  Could not determine required Node.js version for MODULE_VERSION ${versionError.required}`,
+					);
+				}
+			}
+
+			// If this was the last attempt, or we couldn't handle the error, throw it
+			if (attempt === maxRetries) {
+				throw error;
+			}
+		}
+	}
+
+	// This should never be reached, but TypeScript needs it
+	throw new Error("Unexpected end of retry loop");
 }
 
 async function parseCsv(csvContent: string): Promise<
@@ -95,8 +221,11 @@ async function parseCsv(csvContent: string): Promise<
 }
 
 async function main(): Promise<void> {
+	// Load Node version mappings first
+	await loadNodeVersionMappings();
+
 	const csvPath = await getMostRecentCsvPath("parent-projects");
-	console.log(`Reading CSV file from: ${csvPath}`);
+	console.log(`\nReading CSV file from: ${csvPath}`);
 
 	try {
 		// Read and parse the CSV file
@@ -135,11 +264,7 @@ async function main(): Promise<void> {
 			console.log(`   Directory: ${projectPath}`);
 
 			try {
-				const output = await runCommand(
-					"npm",
-					["run", "strapi", "export", "--", "--no-encrypt", "--no-compress"],
-					projectPath,
-				);
+				const output = await runStrapiExportWithVersionHandling(projectPath);
 
 				// Extract export filename from output
 				const exportMatch = output.match(
