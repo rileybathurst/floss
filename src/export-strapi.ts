@@ -143,45 +143,55 @@ async function runStrapiExportWithVersionHandling(
 				);
 				if (requiredNodeVersion) {
 					console.log(`   Switching to Node.js ${requiredNodeVersion}...`);
-					try {
-						// Use bash to source nvm and switch versions since nvm is a shell function
-						await runCommand(
-							"bash",
-							["-c", `source ~/.nvm/nvm.sh && nvm use ${requiredNodeVersion}`],
-							projectPath,
-						);
-						console.log(
-							`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
-						);
-						console.log(`   🔄 Retrying export...`);
-						continue; // Retry the export
-					} catch (nvmError) {
-						console.error(`   ❌ Failed to switch Node version:`, nvmError);
-						// Try alternative nvm paths
+
+					// Array of different nvm approaches to try
+					const nvmApproaches = [
+						// Standard nvm installation with proper NVM_DIR
+						`export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
+						// Alternative nvm path
+						`export NVM_DIR="/root/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
+						// Homebrew nvm installation
+						`export NVM_DIR="/usr/local/opt/nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
+						// Try direct nvm command if available in PATH
+						`nvm use ${requiredNodeVersion}`,
+						// Try with explicit bash login shell
+						`bash -l -c "nvm use ${requiredNodeVersion}"`,
+					];
+
+					let nvmSuccess = false;
+					for (let i = 0; i < nvmApproaches.length; i++) {
 						try {
-							console.log(`   Trying alternative nvm installation path...`);
-							await runCommand(
-								"bash",
-								[
-									"-c",
-									`source /usr/local/opt/nvm/nvm.sh && nvm use ${requiredNodeVersion}`,
-								],
-								projectPath,
+							console.log(
+								`   Trying nvm method ${i + 1}/${nvmApproaches.length}...`,
 							);
+							await runCommand("bash", ["-c", nvmApproaches[i]], projectPath);
+							nvmSuccess = true;
 							console.log(
 								`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
 							);
 							console.log(`   🔄 Retrying export...`);
-							continue; // Retry the export
-						} catch (alternativeError) {
-							console.error(
-								`   ❌ Alternative nvm path also failed:`,
-								alternativeError,
-							);
-							console.log(
-								`   💡 Manual fix required: run 'nvm use ${requiredNodeVersion}' in your shell and retry`,
-							);
+							break;
+						} catch (error) {
+							const errorMsg =
+								error instanceof Error
+									? error.message.split("\n")[0]
+									: String(error);
+							console.log(`   Method ${i + 1} failed: ${errorMsg}`);
+							if (i === nvmApproaches.length - 1) {
+								console.error(`   ❌ All nvm methods failed`);
+								console.log(`   💡 Manual fix required:`);
+								console.log(`      1. Open a new terminal`);
+								console.log(`      2. Run: nvm use ${requiredNodeVersion}`);
+								console.log(`      3. Run: npm run export`);
+								console.log(
+									`   Or install the required Node.js version and retry.`,
+								);
+							}
 						}
+					}
+
+					if (nvmSuccess) {
+						continue; // Retry the export
 					}
 				} else {
 					console.log(
