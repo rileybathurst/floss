@@ -1,55 +1,51 @@
 #!/usr/bin/env node
 
-import { readdir } from "node:fs/promises";
+import { readdir, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 async function main(): Promise<void> {
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const projectDir = path.resolve(scriptDir, "..");
-  const parentDir = path.resolve(projectDir, "..");
-  const projectName = path.basename(projectDir);
+	const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+	const projectDir = path.resolve(scriptDir, "..");
+	const parentDir = path.resolve(projectDir, "..");
+	const projectName = path.basename(projectDir);
 
-  const entries = await readdir(parentDir, { withFileTypes: true });
-  const folderNames = entries
-    .filter((entry) => entry.isDirectory())
-    .filter((entry) => !entry.name.startsWith("."))
-    .filter((entry) => entry.name !== projectName)
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b));
+	const entries = await readdir(parentDir, { withFileTypes: true });
+	const folderNames = entries
+		.filter((entry) => entry.isDirectory())
+		.filter((entry) => !entry.name.startsWith("."))
+		.filter((entry) => entry.name !== projectName)
+		.map((entry) => entry.name)
+		.sort((a, b) => a.localeCompare(b));
 
-  const dbPath = path.join(projectDir, "parent-projects.db");
-  const db = new DatabaseSync(dbPath);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS parent_projects (
-      name TEXT PRIMARY KEY,
-      parent_dir TEXT NOT NULL,
-      discovered_at TEXT NOT NULL
-    )
-  `);
+	const csvPath = path.join(projectDir, "/output/parent-projects.csv");
+	const now = new Date();
+	const discoveredAt = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
 
-  db.exec("DELETE FROM parent_projects");
-  const discoveredAt = new Date().toISOString();
-  const insertProject = db.prepare(
-    "INSERT INTO parent_projects (name, parent_dir, discovered_at) VALUES (?, ?, ?)"
-  );
-  for (const folderName of folderNames) {
-    insertProject.run(folderName, parentDir, discoveredAt);
-  }
-  db.close();
+	// Ensure output directory exists
+	const outputDir = path.dirname(csvPath);
+	await mkdir(outputDir, { recursive: true });
 
-  const output = folderNames.map((name) => `- ${name}`).join("\n");
+	// Create CSV content with headers
+	const csvHeaders = "name,parent_dir,discovered_at\n";
+	const csvRows = folderNames
+		.map((folderName) => `"${folderName}","${parentDir}","${discoveredAt}"`)
+		.join("\n");
+	const csvContent = csvHeaders + csvRows;
 
-  console.log(`Parent directory: ${parentDir}`);
-  console.log(`Saved folders to SQLite: ${dbPath}`);
+	await writeFile(csvPath, csvContent, "utf8");
 
-  console.log("Folders:");
-  console.log(output || "(none)");
+	const output = folderNames.map((name) => `- ${name}`).join("\n");
+
+	console.log(`Parent directory: ${parentDir}`);
+	console.log(`Saved folders to CSV: ${csvPath}`);
+
+	console.log("Folders:");
+	console.log(output || "(none)");
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Failed to list parent folders: ${message}`);
-  process.exit(1);
+	const message = error instanceof Error ? error.message : String(error);
+	console.error(`Failed to list parent folders: ${message}`);
+	process.exit(1);
 });
