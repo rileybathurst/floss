@@ -10,11 +10,14 @@ A TypeScript CLI tool for managing development projects with two main features:
 ### Interactive CLI Menu
 
 When you run the main command, you can choose between:
+
 - `hello` - prints a styled "hello" message
 - `world` - prints a styled "world" message
 
 ### Parent Directory Management
+
 The tool can scan the parent directory to:
+
 - List all sibling project folders
 - Check package.json versions and git status
 - Store project information in a SQLite database
@@ -28,8 +31,6 @@ npm install
 
 ## Usage
 
-### Interactive CLI Menu
-
 ```bash
 npm start
 ```
@@ -41,6 +42,8 @@ npm run list
 ```
 
 ### Check Package Versions and Git Status
+
+This is mysql instead of CSV so its the older system
 
 ```bash
 npm run versions
@@ -64,6 +67,7 @@ astro-chooser
 ## Database Storage
 
 The tool uses SQLite to store project information in `parent-projects.db` with two tables:
+
 - `parent_projects` - discovered project folders
 - `parent_project_statuses` - package versions and git status tracking
 

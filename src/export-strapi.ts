@@ -109,16 +109,37 @@ async function runCommand(
 	});
 }
 
+// Sources whichever nvm.sh install is present so `nvm use` works in a single shell invocation.
+const NVM_SOURCE_SNIPPET = [
+	'export NVM_DIR="$HOME/.nvm"',
+	'[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"',
+	'[ -s "/usr/local/opt/nvm/nvm.sh" ] && \\. "/usr/local/opt/nvm/nvm.sh"',
+	'[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \\. "/opt/homebrew/opt/nvm/nvm.sh"',
+].join(" && ");
+
+// Combines `nvm use` and the strapi export into one shell command so the version switch
+// actually applies to the npm process (a separate `nvm use` invocation would have no effect
+// on a later, independently spawned command).
+function buildExportCommand(nodeVersion: string | null): string {
+	const exportCmd = "npm run strapi export -- --no-encrypt --no-compress";
+	if (!nodeVersion) {
+		return exportCmd;
+	}
+	return `${NVM_SOURCE_SNIPPET} && nvm use ${nodeVersion} && ${exportCmd}`;
+}
+
 async function runStrapiExportWithVersionHandling(
 	projectPath: string,
 	maxRetries: number = 2,
 ): Promise<string> {
+	let nodeVersion: string | null = null;
+
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
 			console.log(`   Attempt ${attempt}/${maxRetries}...`);
 			const output = await runCommand(
-				"npm",
-				["run", "strapi", "export", "--", "--no-encrypt", "--no-compress"],
+				"bash",
+				["-c", buildExportCommand(nodeVersion)],
 				projectPath,
 			);
 			return output;
@@ -142,60 +163,18 @@ async function runStrapiExportWithVersionHandling(
 					versionError.required,
 				);
 				if (requiredNodeVersion) {
-					console.log(`   Switching to Node.js ${requiredNodeVersion}...`);
-
-					// Array of different nvm approaches to try
-					const nvmApproaches = [
-						// Standard nvm installation with proper NVM_DIR
-						`export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
-						// Alternative nvm path
-						`export NVM_DIR="/root/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
-						// Homebrew nvm installation
-						`export NVM_DIR="/usr/local/opt/nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use ${requiredNodeVersion}`,
-						// Try direct nvm command if available in PATH
-						`nvm use ${requiredNodeVersion}`,
-						// Try with explicit bash login shell
-						`bash -l -c "nvm use ${requiredNodeVersion}"`,
-					];
-
-					let nvmSuccess = false;
-					for (let i = 0; i < nvmApproaches.length; i++) {
-						try {
-							console.log(
-								`   Trying nvm method ${i + 1}/${nvmApproaches.length}...`,
-							);
-							await runCommand("bash", ["-c", nvmApproaches[i]], projectPath);
-							nvmSuccess = true;
-							console.log(
-								`   ✅ Successfully switched to Node.js ${requiredNodeVersion}`,
-							);
-							console.log(`   🔄 Retrying export...`);
-							break;
-						} catch (error) {
-							const errorMsg =
-								error instanceof Error
-									? error.message.split("\n")[0]
-									: String(error);
-							console.log(`   Method ${i + 1} failed: ${errorMsg}`);
-							if (i === nvmApproaches.length - 1) {
-								console.error(`   ❌ All nvm methods failed`);
-								console.log(`   💡 Manual fix required:`);
-								console.log(`      1. Open a new terminal`);
-								console.log(`      2. Run: nvm use ${requiredNodeVersion}`);
-								console.log(`      3. Run: npm run export`);
-								console.log(
-									`   Or install the required Node.js version and retry.`,
-								);
-							}
-						}
-					}
-
-					if (nvmSuccess) {
-						continue; // Retry the export
-					}
+					console.log(
+						`   Will retry using nvm to switch to Node.js ${requiredNodeVersion}...`,
+					);
+					nodeVersion = requiredNodeVersion;
+					console.log(`   🔄 Retrying export...`);
+					continue;
 				} else {
 					console.log(
 						`   ⚠️  Could not determine required Node.js version for MODULE_VERSION ${versionError.required}`,
+					);
+					console.log(
+						`   💡 Add a "${"v?.x"},${versionError.required}" row to src/nvm.csv for the installed Node.js version, then retry.`,
 					);
 				}
 			}
