@@ -113,7 +113,7 @@ async function runStrapiExportWithVersionHandling(
 						`   ⚠️  Could not determine required Node.js version for MODULE_VERSION ${versionError.required}`,
 					);
 					console.log(
-						`   💡 Add a "${"v?.x"},${versionError.required}" row to src/nvm.csv for the installed Node.js version, then retry.`,
+						`   💡 Add a "${"v?.x"},${versionError.required},<min>,<max>" row to src/nvm.csv for the installed Node.js version, then retry.`,
 					);
 				}
 			}

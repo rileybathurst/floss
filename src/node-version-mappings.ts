@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 interface NodeVersionMapping {
 	version: string;
 	moduleVersion: string;
+	minModuleVersion: number;
+	maxModuleVersion: number;
 }
 
 let nodeVersionMappings: NodeVersionMapping[] = [];
@@ -22,17 +24,26 @@ export async function loadNodeVersionMappings(): Promise<void> {
 		const dataLines = lines.slice(1);
 
 		nodeVersionMappings = dataLines.map((line) => {
-			const [version, moduleVersion] = line.split(",");
+			const [version, moduleVersion, minModuleVersion, maxModuleVersion] =
+				line.split(",");
+			const moduleVersionNumber = Number.parseInt(moduleVersion.trim(), 10);
 			return {
 				version: version.trim(),
 				moduleVersion: moduleVersion.trim(),
+				// Rows without an explicit span fall back to exact matching
+				minModuleVersion: minModuleVersion
+					? Number.parseInt(minModuleVersion.trim(), 10)
+					: moduleVersionNumber,
+				maxModuleVersion: maxModuleVersion
+					? Number.parseInt(maxModuleVersion.trim(), 10)
+					: moduleVersionNumber,
 			};
 		});
 
 		console.log("📋 Loaded Node.js version mappings:");
 		nodeVersionMappings.forEach((mapping) => {
 			console.log(
-				`   ${mapping.version} → NODE_MODULE_VERSION ${mapping.moduleVersion}`,
+				`   ${mapping.version} → NODE_MODULE_VERSION ${mapping.moduleVersion} (span ${mapping.minModuleVersion}-${mapping.maxModuleVersion})`,
 			);
 		});
 	} catch (error) {
@@ -59,9 +70,17 @@ export function extractNodeModuleVersionError(
 export function getNodeVersionForModuleVersion(
 	moduleVersion: string,
 ): string | null {
-	const mapping = nodeVersionMappings.find(
-		(m) => m.moduleVersion === moduleVersion,
-	);
+	// Prefer an exact match, then fall back to the span so that smaller
+	// number mismatches still resolve to the closest Node.js version
+	const moduleVersionNumber = Number.parseInt(moduleVersion, 10);
+	const mapping =
+		nodeVersionMappings.find((m) => m.moduleVersion === moduleVersion) ??
+		nodeVersionMappings.find(
+			(m) =>
+				!Number.isNaN(moduleVersionNumber) &&
+				moduleVersionNumber >= m.minModuleVersion &&
+				moduleVersionNumber <= m.maxModuleVersion,
+		);
 	return mapping ? mapping.version : null;
 }
 
