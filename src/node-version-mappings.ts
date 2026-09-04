@@ -67,6 +67,14 @@ export function extractNodeModuleVersionError(
 	return null;
 }
 
+// nvm cannot resolve wildcard strings like "v22.x" against locally installed
+// versions — it falls back to querying the remote listing, which has no literal
+// "v22.x", and reports "N/A: version not yet installed". Major-only specs such
+// as "v22" or "22" match installed versions locally, so strip the suffix.
+function toNvmVersionSpec(version: string): string {
+	return version.replace(/\.(x|\*)$/i, "");
+}
+
 export function getNodeVersionForModuleVersion(
 	moduleVersion: string,
 ): string | null {
@@ -81,7 +89,7 @@ export function getNodeVersionForModuleVersion(
 				moduleVersionNumber >= m.minModuleVersion &&
 				moduleVersionNumber <= m.maxModuleVersion,
 		);
-	return mapping ? mapping.version : null;
+	return mapping ? toNvmVersionSpec(mapping.version) : null;
 }
 
 export function hasNodeVersionMappings(): boolean {
