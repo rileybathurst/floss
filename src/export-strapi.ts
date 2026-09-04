@@ -2,71 +2,14 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import {
+	extractNodeModuleVersionError,
+	getNodeVersionForModuleVersion,
+	hasNodeVersionMappings,
+	loadNodeVersionMappings,
+} from "./node-version-mappings.js";
 import { getMostRecentCsvPath } from "./utils.js";
-
-// Mapping of NODE_MODULE_VERSION to Node.js version
-interface NodeVersionMapping {
-	version: string;
-	moduleVersion: string;
-}
-
-let nodeVersionMappings: NodeVersionMapping[] = [];
-
-async function loadNodeVersionMappings(): Promise<void> {
-	const __filename = fileURLToPath(import.meta.url);
-	const __dirname = path.dirname(__filename);
-	// Go up one level from dist/ to project root, then into src/
-	const nvmCsvPath = path.join(__dirname, "..", "src", "nvm.csv");
-
-	try {
-		const csvContent = await readFile(nvmCsvPath, "utf8");
-		const lines = csvContent.trim().split("\n");
-		// Skip header line
-		const dataLines = lines.slice(1);
-
-		nodeVersionMappings = dataLines.map((line) => {
-			const [version, moduleVersion] = line.split(",");
-			return {
-				version: version.trim(),
-				moduleVersion: moduleVersion.trim(),
-			};
-		});
-
-		console.log("📋 Loaded Node.js version mappings:");
-		nodeVersionMappings.forEach((mapping) => {
-			console.log(
-				`   ${mapping.version} → NODE_MODULE_VERSION ${mapping.moduleVersion}`,
-			);
-		});
-	} catch (error) {
-		console.warn("⚠️  Could not load Node version mappings from nvm.csv");
-		nodeVersionMappings = [];
-	}
-}
-
-function extractNodeModuleVersionError(
-	errorOutput: string,
-): { current: string; required: string } | null {
-	const match = errorOutput.match(
-		/NODE_MODULE_VERSION (\d+).*requires\s+NODE_MODULE_VERSION (\d+)/i,
-	);
-	if (match) {
-		return {
-			current: match[1],
-			required: match[2],
-		};
-	}
-	return null;
-}
-
-function getNodeVersionForModuleVersion(moduleVersion: string): string | null {
-	const mapping = nodeVersionMappings.find(
-		(m) => m.moduleVersion === moduleVersion,
-	);
-	return mapping ? mapping.version : null;
-}
 
 async function runCommand(
 	command: string,
@@ -78,7 +21,7 @@ async function runCommand(
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ["inherit", "pipe", "pipe"],
-			shell: true,
+			shell: false,
 		});
 
 		child.stdout?.on("data", (data) => {
@@ -150,11 +93,7 @@ async function runStrapiExportWithVersionHandling(
 
 			// Check for NODE_MODULE_VERSION mismatch
 			const versionError = extractNodeModuleVersionError(errorMessage);
-			if (
-				versionError &&
-				nodeVersionMappings.length > 0 &&
-				attempt < maxRetries
-			) {
+			if (versionError && hasNodeVersionMappings() && attempt < maxRetries) {
 				console.log(`\n🔧 Detected NODE_MODULE_VERSION mismatch:`);
 				console.log(`   Current: ${versionError.current}`);
 				console.log(`   Required: ${versionError.required}`);
