@@ -98,22 +98,25 @@ async function runStrapiExportWithVersionHandling(
 				console.log(`   Current: ${versionError.current}`);
 				console.log(`   Required: ${versionError.required}`);
 
-				const requiredNodeVersion = getNodeVersionForModuleVersion(
-					versionError.required,
+				// Match the version the binary was actually compiled for, not the
+				// active runtime's requirement, so nvm switches to a Node whose ABI
+				// the existing native module already satisfies.
+				const compatibleNodeVersion = getNodeVersionForModuleVersion(
+					versionError.current,
 				);
-				if (requiredNodeVersion) {
+				if (compatibleNodeVersion) {
 					console.log(
-						`   Will retry using nvm to switch to Node.js ${requiredNodeVersion}...`,
+						`   Will retry using nvm to switch to Node.js ${compatibleNodeVersion}...`,
 					);
-					nodeVersion = requiredNodeVersion;
+					nodeVersion = compatibleNodeVersion;
 					console.log(`   🔄 Retrying export...`);
 					continue;
 				} else {
 					console.log(
-						`   ⚠️  Could not determine required Node.js version for MODULE_VERSION ${versionError.required}`,
+						`   ⚠️  Could not determine a Node.js version matching the compiled MODULE_VERSION ${versionError.current}`,
 					);
 					console.log(
-						`   💡 Add a "${"v?.x"},${versionError.required},<min>,<max>" row to src/nvm.csv for the installed Node.js version, then retry.`,
+						`   💡 Add a "${"v?.x"},${versionError.current},<min>,<max>" row to src/nvm.csv for the Node.js version the module was compiled for, then retry.`,
 					);
 				}
 			}
