@@ -53,11 +53,12 @@ async function runCommand(
 }
 
 // Sources whichever nvm.sh install is present so `nvm use` works in a single shell invocation.
+// Uses if/elif rather than && chaining: with &&, a missing fallback path makes the
+// `[ -s ... ]` test return 1, which short-circuits the whole chain so `nvm use` and
+// the export never run — bash then exits 1 with no output at all.
 const NVM_SOURCE_SNIPPET = [
 	'export NVM_DIR="$HOME/.nvm"',
-	'[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"',
-	'[ -s "/usr/local/opt/nvm/nvm.sh" ] && \\. "/usr/local/opt/nvm/nvm.sh"',
-	'[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \\. "/opt/homebrew/opt/nvm/nvm.sh"',
+	'if [ -s "$NVM_DIR/nvm.sh" ]; then \\. "$NVM_DIR/nvm.sh"; elif [ -s "/usr/local/opt/nvm/nvm.sh" ]; then \\. "/usr/local/opt/nvm/nvm.sh"; elif [ -s "/opt/homebrew/opt/nvm/nvm.sh" ]; then \\. "/opt/homebrew/opt/nvm/nvm.sh"; fi',
 ].join(" && ");
 
 // Combines `nvm use` and the strapi export into one shell command so the version switch
